@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import scipy.sparse
 import scipy.stats
+import threading
 
 data, labels, class_names, vocabulary = np.load("ReutersNews_4Classes_sparse.npy", allow_pickle=True)
 
@@ -29,19 +30,26 @@ def knn_classify(test_samples, training_data, training_labels, metric="euclidean
     Returns: A vector of size m, where out[i] is the predicted class of test_samples[i].
     """
     # Calculate an m x n distance matrix.
-    m = test_samples.shape[0]
-    n = training_data.shape[0]
+    if(metric=="euclidean"):
+        testSamples = test_samples.toarray()
+        trainingData = training_data.toarray()
+        testDots = np.square(testSamples).sum(axis=1).reshape((testSamples.shape[0],1))
+        trainDots = np.square(trainingData).sum(axis=1)
+        pairwise_distance = testDots + trainDots -2*testSamples.dot(trainingData.T)
+        pairwise_distance = np.sqrt(pairwise_distance)
+    elif(metric=="cosine"):
+        dot_products = np.dot(test_samples, training_data.T)
 
-    testSamples = test_samples.toarray()
-    trainingData = training_data.toarray()
+        testSamples = test_samples.toarray()
+        trainingData = training_data.toarray()
 
-    testDots = (testSamples*testSamples).sum(axis=1).reshape((m,1))*np.ones(shape=(1,n))
-    trainDots = (trainingData*trainingData).sum(axis=1)*np.ones(shape=(m,1))
-    pairwise_distance = testDots + trainDots -2*testSamples.dot(trainingData.T)
+        test_norm = np.sqrt(np.sum(np.square(testSamples), axis=1)).reshape((testSamples.shape[0],1))
+        training_norm = np.sqrt(np.sum(np.square(trainingData), axis=1))
 
-    zero_mask = np.less(pairwise_distance, 0.0)
-    pairwise_distance[zero_mask] = 0.0
-    pairwise_distance = np.sqrt(pairwise_distance)
+        norm_products = test_norm * training_norm
+        
+        pairwise_similarity = dot_products / norm_products
+        pairwise_distance = 1 - pairwise_similarity
     
     # Find the k nearest neighbours of each samples as an m x k matrix of indices.
     nearest_neighbours = np.argpartition(pairwise_distance, k)[:, :k]
@@ -51,28 +59,46 @@ def knn_classify(test_samples, training_data, training_labels, metric="euclidean
     
     # Return the most frequent class on each row.
     # Note: Ensure that the returned vector does not contain any empty dimensions.
-    most_frequent_labels = scipy.stats.mode(nearest_labels, axis=1)[0]
+    most_frequent_labels = scipy.stats.mode(nearest_labels, axis=1, keepdims=True)[0]
     return np.squeeze(most_frequent_labels)
 
 # Exp 1
-for i in range(20):
-    indexes = sample_indices(labels, 80, 80, 80, 80)
-    trainingSample = data[indexes]
-    testSample = scipy.sparse.csr_matrix(np.delete(data.todense(), indexes, 0))
-    predictedOutputs = knn_classify(trainingSample, testSample, labels)
-    actualOutputs = labels[indexes]
-    for j in range(len(labels)):
-        TP = np.sum((predictedOutputs == j) & (actualOutputs == j))
-        TN = np.sum((predictedOutputs != j) & (actualOutputs != j))
-        FP = np.sum((predictedOutputs == 1) & (actualOutputs == 0))
-        FN = np.sum((predictedOutputs == 0) & (actualOutputs == 1))
-    accuracy = truePositives / data.shape[0]
-    correlation_coef = np.corrcoef(predictedOutputs.flatten(), actualOutputs.flatten())[0, 1]
-    similarity_percentage = (correlation_coef + 1) / 2 * 100
-    print("Test "+str(i)+" Accuracy of "+str(similarity_percentage))
+def runTest(accuracies, metric="euclidean", k=1):
+    trainIndexes = sample_indices(labels, 80, 80, 80, 80)
+    testIndexes = np.delete(range(800),trainIndexes)
+    trainingSample = data[trainIndexes]
+    testSample = scipy.sparse.csr_matrix(np.delete(data.todense(), trainIndexes, 0))
+    predictedOutputs = knn_classify(testSample, trainingSample, labels[trainIndexes], metric=metric, k=k)
+    actualOutputs = labels[testIndexes]
+    accuracy = np.sum(predictedOutputs == actualOutputs)/predictedOutputs.shape[0]
+    accuracies.append(accuracy)
 
-# Exp 1 but shorter
+# accuracies = []
 # for i in range(20):
-#     indexes = sample_indices(labels, 80, 80, 80, 80)
-#     correlation_coef = np.corrcoef(knn_classify(data[indexes], scipy.sparse.csr_matrix(np.delete(data.todense(), indexes, 0)), labels).flatten(), labels[indexes].flatten())[0, 1]
-#     print("Test "+str(i)+" Accuracy of "+str((correlation_coef + 1) / 2 * 100))
+#     runTest(accuracies, metric="euclidean", k=1)
+# print("Test accuracy of "+str(np.mean(accuracies))+" and std deviation "+str(np.std(accuracies)))
+
+# accuracies = []
+# for i in range(20):
+#     runTest(accuracies, metric="cosine", k=1)
+#     print("Progress "+("#"*(i)), end="\r")
+# print("Test accuracy of "+str(np.mean(accuracies))+" and std deviation "+str(np.std(accuracies)))
+
+# Exp 2
+for j in range(1,51):
+    accuracies = []
+    for i in range(20):
+        runTest(accuracies, metric="cosine", k=j)
+    # print("Test accuracy of "+str(np.mean(accuracies))+" and std deviation "+str(np.std(accuracies)))
+    # print("Progress "+("#"*(j)), end="\r")
+
+# Exp 3
+def runTest2(accuracies, metric="euclidean", k=1):
+    trainIndexes = sample_indices(labels, 100, 100, 100, 100)
+    testIndexes = np.delete(range(800),trainIndexes)
+    trainingSample = data[trainIndexes]
+    testSample = scipy.sparse.csr_matrix(np.delete(data.todense(), trainIndexes, 0))
+    predictedOutputs = knn_classify(testSample, trainingSample, labels[trainIndexes], metric=metric, k=k)
+    actualOutputs = labels[testIndexes]
+    accuracy = np.sum(predictedOutputs == actualOutputs)/predictedOutputs.shape[0]
+    accuracies.append(accuracy)
