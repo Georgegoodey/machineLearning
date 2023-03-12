@@ -45,6 +45,7 @@ def knn_classify(test_samples, training_data, training_labels, metric="euclidean
 
         test_norm = np.sqrt(np.sum(np.square(testSamples), axis=1)).reshape((testSamples.shape[0],1))
         training_norm = np.sqrt(np.sum(np.square(trainingData), axis=1))
+        print("Shape of test: " +str(test_norm.shape)+" Shape of train: "+str(training_norm.shape))
 
         norm_products = test_norm * training_norm
         
